@@ -2,7 +2,6 @@
 
 set -e
 
-
 GITHUB_REPO="webwizards-team/Phantom-Tunnel"
 ASSET_NAME="phantom"
 
@@ -10,6 +9,8 @@ EXECUTABLE_NAME="phantom"
 INSTALL_PATH="/usr/local/bin"
 SERVICE_NAME="phantom.service"
 WORKING_DIR="/etc/phantom"
+DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/3.0.0/${ASSET_NAME}"
+
 
 print_info() { echo -e "\e[34m[INFO]\e[0m $1"; }
 print_success() { echo -e "\e[32m[SUCCESS]\e[0m $1"; }
@@ -22,24 +23,26 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 print_info "Checking for curl..."
-if command -v apt-get &> /dev/null; then
-    apt-get update -y > /dev/null && apt-get install -y curl
-elif command -v yum &> /dev/null; then
-    yum install -y curl
+if ! command -v curl &> /dev/null; then
+    print_info "curl is not installed. Attempting to install..."
+    if command -v apt-get &> /dev/null; then
+        apt-get update -y -qq && apt-get install -y curl -qq
+    elif command -v yum &> /dev/null; then
+        yum install -y curl -q
+    else
+        print_error "Unsupported package manager. Please install 'curl' manually."
+    fi
 else
-    print_error "Unsupported package manager. Please install 'curl' manually."
+    print_success "curl is already installed."
 fi
 
-DOWNLOAD_URL="https://github.com/${GITHUB_REPO}/releases/download/3.0.0/${ASSET_NAME}"
-
-print_info "Downloading the latest version from: ${DOWNLOAD_URL}"
-TMP_DIR=$(mktemp -d); trap 'rm -rf -- "$TMP_DIR"' EXIT; cd "$TMP_DIR"
-if ! curl -sSLf -o "$EXECUTABLE_NAME" "$DOWNLOAD_URL"; then
+print_info "Download and Install the latest version of $EXECUTABLE_NAME from: ${DOWNLOAD_URL}"
+if ! curl -sSkLf -o "$INSTALL_PATH/$EXECUTABLE_NAME" "$DOWNLOAD_URL"; then
     print_error "Download failed. Please check the repository name and asset name in the script, and ensure the asset exists in the latest GitHub release."
+    rm -f "$INSTALL_PATH/$EXECUTABLE_NAME" || true
+    exit 1
 fi
 
-print_info "Installing executable to ${INSTALL_PATH}..."
-mv "$EXECUTABLE_NAME" "$INSTALL_PATH/"
 chmod +x "$INSTALL_PATH/$EXECUTABLE_NAME"
 mkdir -p "$WORKING_DIR"
 print_success "Phantom application binary installed."
@@ -67,8 +70,9 @@ WantedBy=multi-user.target
 EOF
 
 print_info "Reloading systemd and enabling the service..."
-systemctl daemon-reload
-systemctl enable "$SERVICE_NAME"
+systemctl daemon-reload && systemctl enable "$SERVICE_NAME"
+print_info "Starting the service now..."
+systemctl restart "$SERVICE_NAME"
 
 echo ""
 print_success "Installation complete!"
@@ -84,8 +88,6 @@ echo ""
 print_info "Configuration files are in: ${WORKING_DIR}"
 echo "--------------------------------------------------"
 
-print_info "Starting the service now..."
-systemctl restart "$SERVICE_NAME"
 sleep 2
 if systemctl is-active --quiet "$SERVICE_NAME"; then
     print_success "Phantom Panel service is now running!"
